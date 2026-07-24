@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -13,16 +14,60 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-AVITO_PRO_PATH = Path("/Users/veronikalagutkina/Downloads/Орлов Статистика_с_2026-07-01_по_2026-07-23.xlsx")
-XML_SHEET_PATH = Path("/Users/veronikalagutkina/Downloads/Холодильник СПБ Николай Орлов.xlsx")
-PREVIEW_DIR = ROOT / "assets" / "orlov-all-previews"
 DATA_DIR = ROOT / "data" / "processed"
+RAW_XML_DIR = ROOT / "data" / "raw" / "xml-sheets"
+PERIOD = "2026-07-01 — 2026-07-23"
 
-SHEETS = [
+
+@dataclass(frozen=True)
+class AccountConfig:
+    key: str
+    label: str
+    avito_pro_path: Path
+    xml_sheet_path: Path
+    preview_dir: Path
+
+
+ACCOUNTS = [
+    AccountConfig(
+        key="orlov",
+        label="Николай Орлов ИП",
+        avito_pro_path=Path("/Users/veronikalagutkina/Downloads/Орлов Статистика_с_2026-07-01_по_2026-07-23.xlsx"),
+        xml_sheet_path=Path("/Users/veronikalagutkina/Downloads/Холодильник СПБ Николай Орлов.xlsx"),
+        preview_dir=ROOT / "assets" / "orlov-all-previews",
+    ),
+    AccountConfig(
+        key="gennady",
+        label="Геннадий Сергеевич ИП",
+        avito_pro_path=Path("/Users/veronikalagutkina/Downloads/Геннадий Статистика_с_2026-07-01_по_2026-07-23.xlsx"),
+        xml_sheet_path=RAW_XML_DIR / "gennady.xlsx",
+        preview_dir=ROOT / "assets" / "gennady-all-previews",
+    ),
+    AccountConfig(
+        key="matrosov",
+        label="Матросов Александр",
+        avito_pro_path=Path("/Users/veronikalagutkina/Downloads/Матросов Статистика_с_2026-07-01_по_2026-07-23.xlsx"),
+        xml_sheet_path=RAW_XML_DIR / "matrosov.xlsx",
+        preview_dir=ROOT / "assets" / "matrosov-all-previews",
+    ),
+    AccountConfig(
+        key="kiyakin",
+        label="Киякин Денис",
+        avito_pro_path=Path("/Users/veronikalagutkina/Downloads/Киякин Денис Статистика_с_2026-07-01_по_2026-07-23.xlsx"),
+        xml_sheet_path=RAW_XML_DIR / "kiyakin.xlsx",
+        preview_dir=ROOT / "assets" / "kiyakin-all-previews",
+    ),
+]
+
+SHEET_DIRECTIONS = [
     ("Avito Кондиционеры", "Кондиционеры"),
     ("Avito Электрика", "Электрика"),
+    ("Avito Электрика (копия)", "Электрика"),
     ("Avito Сантехника", "Сантехника"),
+    ("Avito Сантехника (копия)", "Сантехника"),
     ("Avito Холодильники", "Холодильники"),
+    ("Avito", "Холодильники"),
+    ("Avito Кофемашины", "Кофемашины"),
 ]
 
 
@@ -112,8 +157,8 @@ def normalize_image_url(url):
     return url
 
 
-def parse_avito_pro():
-    wb = openpyxl.load_workbook(AVITO_PRO_PATH, data_only=False, read_only=True)
+def parse_avito_pro(path):
+    wb = openpyxl.load_workbook(path, data_only=False, read_only=True)
     ws = wb.active
     ws.reset_dimensions()
     rows = ws.iter_rows(values_only=True)
@@ -133,7 +178,7 @@ def parse_avito_pro():
             "address": clean_text(row[idx["Адрес"]]),
             "category": clean_text(row[idx["Категория"]]),
             "subcategory": clean_text(row[idx["Подкатегория"]]),
-            "direction": clean_text(row[idx["Параметр"]]),
+            "direction": normalize_direction(clean_text(row[idx["Параметр"]])),
             "title": title,
             "price": clean_text(row[idx["Цена"]]),
             "first_publication_date": clean_text(row[idx["Дата первой публикации"]]),
@@ -154,10 +199,27 @@ def parse_avito_pro():
     return parsed
 
 
-def parse_xml_sheet():
-    wb = openpyxl.load_workbook(XML_SHEET_PATH, data_only=True, read_only=True)
+def normalize_direction(value):
+    text = clean_text(value)
+    aliases = {
+        "Холодильники, морозильные камеры": "Холодильники",
+        "Кондиционеры, вентиляция": "Кондиционеры",
+    }
+    return aliases.get(text, text)
+
+
+def iter_xml_sheets(wb):
+    seen = set()
+    for sheet_name, direction in SHEET_DIRECTIONS:
+        if sheet_name in wb.sheetnames and sheet_name not in seen:
+            seen.add(sheet_name)
+            yield sheet_name, direction
+
+
+def parse_xml_sheet(path):
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     parsed = {}
-    for sheet_name, direction in SHEETS:
+    for sheet_name, direction in iter_xml_sheets(wb):
         ws = wb[sheet_name]
         ws.reset_dimensions()
         rows = ws.iter_rows(values_only=True)
@@ -216,13 +278,13 @@ def image_hash(path):
     return f"{int(bits, 2):016x}"
 
 
-def download_preview(url):
+def download_preview(url, preview_dir):
     url = normalize_image_url(url)
     if not url:
         return "", "", ""
-    PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    preview_dir.mkdir(parents=True, exist_ok=True)
     url_digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
-    cached = sorted(PREVIEW_DIR.glob(f"{url_digest}-*"))
+    cached = sorted(preview_dir.glob(f"{url_digest}-*"))
     if cached:
         path = cached[0]
         file_digest = path.stem.split("-", 1)[1]
@@ -232,7 +294,7 @@ def download_preview(url):
     content = response.content
     file_digest = hashlib.sha256(content).hexdigest()[:16]
     ext = ext_from_response(response.url, response.headers.get("content-type", ""))
-    path = PREVIEW_DIR / f"{url_digest}-{file_digest}{ext}"
+    path = preview_dir / f"{url_digest}-{file_digest}{ext}"
     if not path.exists():
         path.write_bytes(content)
     return str(path.relative_to(ROOT)), file_digest, image_hash(path)
@@ -252,17 +314,16 @@ def classify_group(group):
     return "watch", "средняя зона: проверять по гео и объему"
 
 
-def main():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    pro = parse_avito_pro()
-    xml = parse_xml_sheet()
+def build_account(config):
+    pro = parse_avito_pro(config.avito_pro_path)
+    xml = parse_xml_sheet(config.xml_sheet_path)
     ads = []
     for ad_id, pro_row in pro.items():
         xml_row = xml.get(ad_id, {})
         merged = {**pro_row, **xml_row}
         image_url = merged.get("first_image_url", "")
         try:
-            local_image, file_hash, visual_hash = download_preview(image_url)
+            local_image, file_hash, visual_hash = download_preview(image_url, config.preview_dir)
         except Exception as exc:
             local_image, file_hash, visual_hash = "", "", ""
             merged["image_error"] = str(exc)
@@ -439,10 +500,11 @@ def main():
         if ad.get("direction") != "Запчасти и аксессуары"
     ]
     summary = {
-        "account": "Николай Орлов ИП",
-        "period": "2026-07-01 — 2026-07-23",
-        "source_avito_pro": str(AVITO_PRO_PATH),
-        "source_xml_sheet": str(XML_SHEET_PATH),
+        "account": config.label,
+        "key": config.key,
+        "period": PERIOD,
+        "source_avito_pro": str(config.avito_pro_path),
+        "source_xml_sheet": str(config.xml_sheet_path),
         "ads_total": len(ads),
         "ads_matched_xml": sum(1 for ad in ads if ad.get("first_image_url")),
         "preview_groups_total": len(output_groups),
@@ -453,13 +515,37 @@ def main():
         "contacts": round(sum(ad.get("contacts", 0) for ad in ads), 2),
         "spend": round(sum(ad.get("spend", 0) for ad in ads), 2),
     }
-    payload = {"summary": summary, "groups": output_groups, "combos": output_combos, "ads": public_ads}
-    (DATA_DIR / "orlov_creatives.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    (DATA_DIR / "orlov_creatives.js").write_text(
-        "window.ORLOV_CREATIVE_DATA = " + json.dumps(payload, ensure_ascii=False) + ";\n",
+    return {"summary": summary, "groups": output_groups, "combos": output_combos, "ads": public_ads}
+
+
+def main():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    accounts_payload = {}
+    for config in ACCOUNTS:
+        missing = [str(path) for path in [config.avito_pro_path, config.xml_sheet_path] if not path.exists()]
+        if missing:
+            raise FileNotFoundError(f"{config.label}: missing source files: {missing}")
+        payload = build_account(config)
+        accounts_payload[config.label] = payload
+        if config.key == "orlov":
+            (DATA_DIR / "orlov_creatives.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            (DATA_DIR / "orlov_creatives.js").write_text(
+                "window.ORLOV_CREATIVE_DATA = " + json.dumps(payload, ensure_ascii=False) + ";\n",
+                encoding="utf-8",
+            )
+
+    combined = {
+        "period": PERIOD,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "account_order": [config.label for config in ACCOUNTS],
+        "accounts": accounts_payload,
+    }
+    (DATA_DIR / "creative_accounts.json").write_text(json.dumps(combined, ensure_ascii=False, indent=2), encoding="utf-8")
+    (DATA_DIR / "creative_accounts.js").write_text(
+        "window.CREATIVE_ACCOUNTS_DATA = " + json.dumps(combined, ensure_ascii=False) + ";\n",
         encoding="utf-8",
     )
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    print(json.dumps({k: v["summary"] for k, v in accounts_payload.items()}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
