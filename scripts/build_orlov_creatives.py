@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -76,6 +77,25 @@ def first_url(value):
             if line.startswith("http://avito.ru/"):
                 return line.replace("http://", "https://", 1)
             return line
+    return ""
+
+
+def cell_datetime(value):
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="minutes")
+    text = clean_text(value)
+    if not text or text in ["Необязательный", "Служебный", "Подробнее о параметре", "Не выгружается в XML", "DateBegin", "DateEnd"]:
+        return ""
+    return text
+
+
+def first_existing_datetime(row, idx, names):
+    for name in names:
+        pos = idx.get(name, -1)
+        if pos >= 0 and pos < len(row):
+            value = cell_datetime(row[pos])
+            if value:
+                return value
     return ""
 
 
@@ -160,6 +180,12 @@ def parse_xml_sheet():
                 "xml_title": clean_text(row[idx["Заголовок объявления"]]),
                 "xml_text": plain_html(row[idx.get("Описание", -1)]) if idx.get("Описание", -1) >= 0 else "",
                 "xml_price": clean_text(row[idx["Цена"]]),
+                "xml_publication_datetime": first_existing_datetime(row, idx, [
+                    "Точная дата и время подачи",
+                    "Дата начала Avito",
+                    "Дата публикации",
+                    "Дата и время",
+                ]),
                 "xml_images": images,
                 "first_image_url": first_url(images),
                 "image_folder": clean_text(row[idx.get("Название папки с фотографиями", -1)]) if idx.get("Название папки с фотографиями", -1) >= 0 else "",
@@ -395,6 +421,7 @@ def main():
             "city": ad.get("city", ""),
             "title": ad.get("title", ""),
             "first_publication_date": ad.get("first_publication_date", ""),
+            "publication_datetime": ad.get("xml_publication_datetime", "") or ad.get("first_publication_date", ""),
             "days_on_avito": ad.get("days_on_avito", 0),
             "text_hash": ad.get("text_hash", ""),
             "text_excerpt": ad.get("text_excerpt", ""),
@@ -409,6 +436,7 @@ def main():
             "spend": ad.get("spend", 0),
         }
         for ad in ads
+        if ad.get("direction") != "Запчасти и аксессуары"
     ]
     summary = {
         "account": "Николай Орлов ИП",
