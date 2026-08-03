@@ -24,7 +24,10 @@ https://github.com/veronalaguta/avito-rk-dashboard-july
 
 Текущий период общего KPI-анализа: с 2026-07-01 по 2026-08-02.
 
-Детальный блок объявлений во вкладке `Аккаунты` пока остается на Avito Pro-периоде 2026-07-01 — 2026-07-23, пока не будут добавлены свежие выгрузки Avito Pro/XML по объявлениям.
+Детальный блок объявлений во вкладке `Аккаунты` обновлен по свежим Avito Pro-выгрузкам:
+- Орлов: 2026-07-01 — 2026-08-02;
+- Геннадий, Матросов, Киякин: 2026-07-01 — 2026-08-03;
+- Бабакин: 2026-07-30 — 2026-08-03.
 
 ## Источники данных
 
@@ -55,10 +58,11 @@ https://github.com/veronalaguta/avito-rk-dashboard-july
 ### Выгрузки Avito Pro
 
 Файлы:
-- `/Users/veronikalagutkina/Downloads/Геннадий Статистика_с_2026-07-01_по_2026-07-23.xlsx`
-- `/Users/veronikalagutkina/Downloads/Киякин Денис Статистика_с_2026-07-01_по_2026-07-23.xlsx`
-- `/Users/veronikalagutkina/Downloads/Матросов Статистика_с_2026-07-01_по_2026-07-23.xlsx`
-- `/Users/veronikalagutkina/Downloads/Орлов Статистика_с_2026-07-01_по_2026-07-23.xlsx`
+- `/Users/veronikalagutkina/Downloads/Геннадий Статистика_с_2026-07-01_по_2026-08-03.xlsx`
+- `/Users/veronikalagutkina/Downloads/Киякин Статистика_с_2026-07-01_по_2026-08-03.xlsx`
+- `/Users/veronikalagutkina/Downloads/Матросов Статистика_с_2026-07-01_по_2026-08-03.xlsx`
+- `/Users/veronikalagutkina/Downloads/Орлов Статистика_с_2026-07-01_по_2026-08-02.xlsx`
+- `/Users/veronikalagutkina/Downloads/Бабакин Статистика_с_2026-07-30_по_2026-08-03.xlsx`
 
 Используются для статистики по объявлениям за период:
 - показы;
@@ -79,6 +83,7 @@ https://github.com/veronalaguta/avito-rk-dashboard-july
 - Александр Матросов: https://docs.google.com/spreadsheets/d/1qYl6lem9shbLfGXhzDlaptVZwXSTklN5XQxJd-Gmf9k/edit
 - Геннадий Сергеевич: https://docs.google.com/spreadsheets/d/1ELz-6Kd3JdDdKUfpLiJvZHtiMEGh42GDQRcZTkeDk-E/edit
 - Николай Орлов: https://docs.google.com/spreadsheets/d/1vIDjZ4PrJwQtrFkmJ0gyKv_19tRq3hQqUUylo4FjG1A/edit
+- Бабакин Даниил: https://docs.google.com/spreadsheets/d/11ajJQzUHSFH9Et8d_VcIEn3hivtipQNHL-PbReBsCF4/edit
 
 Используются как справочник состава объявлений:
 - ID объявления;

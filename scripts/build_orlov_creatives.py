@@ -16,7 +16,15 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "processed"
 RAW_XML_DIR = ROOT / "data" / "raw" / "xml-sheets"
-PERIOD = "2026-07-01 — 2026-07-23"
+DOWNLOADS_DIR = Path.home() / "Downloads"
+PERIOD = "2026-07-01 — 2026-08-03"
+
+
+def download_file(pattern):
+    matches = sorted(DOWNLOADS_DIR.glob(pattern), key=lambda path: path.stat().st_mtime)
+    if not matches:
+        raise FileNotFoundError(f"Download not found: {pattern}")
+    return matches[-1]
 
 
 @dataclass(frozen=True)
@@ -24,7 +32,7 @@ class AccountConfig:
     key: str
     label: str
     avito_pro_path: Path
-    xml_sheet_path: Path
+    xml_sheet_path: Path | None
     preview_dir: Path
 
 
@@ -32,30 +40,37 @@ ACCOUNTS = [
     AccountConfig(
         key="orlov",
         label="Николай Орлов ИП",
-        avito_pro_path=Path("/Users/veronikalagutkina/Downloads/Орлов Статистика_с_2026-07-01_по_2026-07-23.xlsx"),
+        avito_pro_path=download_file("Орлов Статистика_с_2026-07-01_по_2026-08-02.xlsx"),
         xml_sheet_path=Path("/Users/veronikalagutkina/Downloads/Холодильник СПБ Николай Орлов.xlsx"),
         preview_dir=ROOT / "assets" / "orlov-all-previews",
     ),
     AccountConfig(
         key="gennady",
         label="Геннадий Сергеевич ИП",
-        avito_pro_path=Path("/Users/veronikalagutkina/Downloads/Геннадий Статистика_с_2026-07-01_по_2026-07-23.xlsx"),
+        avito_pro_path=download_file("Геннад* Статистика_с_2026-07-01_по_2026-08-03.xlsx"),
         xml_sheet_path=RAW_XML_DIR / "gennady.xlsx",
         preview_dir=ROOT / "assets" / "gennady-all-previews",
     ),
     AccountConfig(
         key="matrosov",
         label="Матросов Александр",
-        avito_pro_path=Path("/Users/veronikalagutkina/Downloads/Матросов Статистика_с_2026-07-01_по_2026-07-23.xlsx"),
+        avito_pro_path=download_file("Матросов Статистика_с_2026-07-01_по_2026-08-03.xlsx"),
         xml_sheet_path=RAW_XML_DIR / "matrosov.xlsx",
         preview_dir=ROOT / "assets" / "matrosov-all-previews",
     ),
     AccountConfig(
         key="kiyakin",
         label="Киякин Денис",
-        avito_pro_path=Path("/Users/veronikalagutkina/Downloads/Киякин Денис Статистика_с_2026-07-01_по_2026-07-23.xlsx"),
+        avito_pro_path=download_file("Киякин Статистика_с_2026-07-01_по_2026-08-03.xlsx"),
         xml_sheet_path=RAW_XML_DIR / "kiyakin.xlsx",
         preview_dir=ROOT / "assets" / "kiyakin-all-previews",
+    ),
+    AccountConfig(
+        key="babakin",
+        label="Бабакин Даниил",
+        avito_pro_path=download_file("Бабакин Статистика_с_2026-07-30_по_2026-08-03.xlsx"),
+        xml_sheet_path=RAW_XML_DIR / "babakin.xlsx",
+        preview_dir=ROOT / "assets" / "babakin-all-previews",
     ),
 ]
 
@@ -316,7 +331,7 @@ def classify_group(group):
 
 def build_account(config):
     pro = parse_avito_pro(config.avito_pro_path)
-    xml = parse_xml_sheet(config.xml_sheet_path)
+    xml = parse_xml_sheet(config.xml_sheet_path) if config.xml_sheet_path and config.xml_sheet_path.exists() else {}
     ads = []
     for ad_id, pro_row in pro.items():
         xml_row = xml.get(ad_id, {})
@@ -504,7 +519,7 @@ def build_account(config):
         "key": config.key,
         "period": PERIOD,
         "source_avito_pro": str(config.avito_pro_path),
-        "source_xml_sheet": str(config.xml_sheet_path),
+        "source_xml_sheet": str(config.xml_sheet_path) if config.xml_sheet_path else "",
         "ads_total": len(ads),
         "ads_matched_xml": sum(1 for ad in ads if ad.get("first_image_url")),
         "preview_groups_total": len(output_groups),
@@ -522,7 +537,10 @@ def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     accounts_payload = {}
     for config in ACCOUNTS:
-        missing = [str(path) for path in [config.avito_pro_path, config.xml_sheet_path] if not path.exists()]
+        required_paths = [config.avito_pro_path]
+        if config.xml_sheet_path:
+            required_paths.append(config.xml_sheet_path)
+        missing = [str(path) for path in required_paths if not path.exists()]
         if missing:
             raise FileNotFoundError(f"{config.label}: missing source files: {missing}")
         payload = build_account(config)
