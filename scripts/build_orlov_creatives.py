@@ -4,7 +4,7 @@ import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -141,6 +141,9 @@ def first_url(value):
 
 
 def cell_datetime(value):
+    if isinstance(value, (int, float)) and value > 30000:
+        base = datetime(1899, 12, 30)
+        return (base + timedelta(days=float(value))).isoformat(timespec="minutes")
     if isinstance(value, datetime):
         return value.isoformat(timespec="minutes")
     text = clean_text(value)
