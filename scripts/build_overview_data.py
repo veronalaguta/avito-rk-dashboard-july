@@ -12,7 +12,11 @@ import openpyxl
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "processed"
 OLD_CSV = Path("/Users/veronikalagutkina/Downloads/Кефир. Вероника. Основная таблица. Условия работы - июль.csv")
-LATEST_XLSX = Path("/Users/veronikalagutkina/Downloads/Вероника 22.xlsx")
+KPI_SOURCES = [
+    {"path": OLD_CSV, "label": "Основная таблица, июль", "kind": "csv"},
+    {"path": Path("/Users/veronikalagutkina/Downloads/Вероника 22.xlsx"), "label": "Вероника 22", "kind": "xlsx"},
+    {"path": Path("/Users/veronikalagutkina/Downloads/Вероника 7.08.xlsx"), "label": "Вероника 7.08", "kind": "xlsx"},
+]
 
 TARGET_DIRECTIONS = ["Сантехника", "Электрика", "Кофемашины", "Кондиционеры", "Телевизоры", "Холодильники"]
 FRIDGE_CITIES = ["Москва", "Санкт-Петербург", "Ростов-на-Дону", "Воронеж", "Краснодар", "Новосибирск"]
@@ -43,6 +47,7 @@ def clean_text(value):
     text = re.sub(r"\s+", " ", text)
     if text == "Кинякин Денис":
         return "Киякин Денис"
+    text = re.sub(r"\s+\(БАН\)$", "", text)
     return text
 
 
@@ -205,17 +210,47 @@ def build_insights(campaigns, by_direction, by_profile):
     return insights[:6]
 
 
-def main():
-    old_rows = read_csv_rows(OLD_CSV) if OLD_CSV.exists() else []
-    latest_rows = read_xlsx_rows(LATEST_XLSX)
+def read_source(source):
+    path = source["path"]
+    if not path.exists():
+        return []
+    if source["kind"] == "csv":
+        return read_csv_rows(path)
+    return read_xlsx_rows(path)
 
-    by_key = {}
-    for row in old_rows:
-        by_key[(row["profile"], row["direction"], row["city"], row["date"])] = row
-    for row in latest_rows:
-        by_key[(row["profile"], row["direction"], row["city"], row["date"])] = row
-    daily_rows = [add_metrics(row.copy()) for row in by_key.values()]
+
+def summarize_source(source, rows):
+    if not rows:
+        return {
+            "label": source["label"],
+            "file": str(source["path"]),
+            "rows": 0,
+            "period": "нет данных",
+            "orders": 0,
+            "spend": 0,
+            "contacts": 0,
+            "views": 0,
+        }
+    totals = aggregate([add_metrics(row.copy()) for row in rows], [])[0]
+    dates = [datetime.fromisoformat(row["date"]).date() for row in rows]
+    return {
+        "label": source["label"],
+        "file": str(source["path"]),
+        "rows": len(rows),
+        "period": format_period(dates),
+        "orders": round(totals["orders"], 2),
+        "spend": round(totals["spend"], 2),
+        "contacts": round(totals["contacts"], 2),
+        "views": round(totals["views"], 2),
+    }
+
+
+def build_payload(daily_rows, source_summary):
+    daily_rows = [add_metrics(row.copy()) for row in daily_rows]
     daily_rows.sort(key=lambda x: (x["date"], x["profile"], x["direction"], x["city"]))
+    by_key = {}
+    for row in daily_rows:
+        by_key[(row["profile"], row["direction"], row["city"], row["date"])] = row
 
     campaigns = aggregate(daily_rows, ["profile", "direction", "city"])
     campaigns.sort(key=lambda x: (x["orders"] == 0 and x["spend"] > 0, x["cpo"] or 999999, -x["orders"]))
@@ -253,7 +288,8 @@ def main():
     payload = {
         "generated": date.today().isoformat(),
         "period": format_period(dates),
-        "source_files": [str(OLD_CSV), str(LATEST_XLSX)],
+        "source_files": [item["file"] for item in source_summary if item["rows"]],
+        "sourceSummary": source_summary,
         "totals": {k: round(totals[k], 2) for k in ["spend", "orders", "calls", "target_calls", "views", "contacts"]},
         "byProfile": by_profile,
         "byDirection": by_direction,
@@ -268,14 +304,31 @@ def main():
         "targetDirections": TARGET_DIRECTIONS,
         "dailyRows": daily_rows,
     }
+    return payload
+
+
+def main():
+    source_summary = []
+    by_key = {}
+    for source in KPI_SOURCES:
+        rows = read_source(source)
+        source_summary.append(summarize_source(source, rows))
+        for row in rows:
+            by_key[(row["profile"], row["direction"], row["city"], row["date"])] = row
+
+    daily_rows = list(by_key.values())
+    payload = build_payload(daily_rows, source_summary)
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     (DATA_DIR / "overview_data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (DATA_DIR / "overview_data.js").write_text("window.OVERVIEW_DATA = " + json.dumps(payload, ensure_ascii=False) + ";\n", encoding="utf-8")
+    (DATA_DIR / "kpi_table_data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    (DATA_DIR / "kpi_table_data.js").write_text("window.KPI_TABLE_DATA = " + json.dumps(payload, ensure_ascii=False) + ";\n", encoding="utf-8")
     print(json.dumps({
         "period": payload["period"],
         "rows": len(daily_rows),
-        "profiles": len(profiles),
-        "campaigns": len(campaigns),
+        "profiles": len(payload["profiles"]),
+        "campaigns": len(payload["campaigns"]),
         "totals": payload["totals"],
     }, ensure_ascii=False, indent=2))
 
